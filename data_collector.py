@@ -9,6 +9,7 @@ MAX_LIMIT = 50
 default_host = 'https://api.yelp.com/'
 default_path = 'v3/businesses/search'
 default_api_key_file = 'api_key'
+data_dir = 'data/'
 
 def request(host, path, api_key, url_params=None):
     if url_params == None:
@@ -19,22 +20,29 @@ def request(host, path, api_key, url_params=None):
     response = requests.request('GET', url, headers=headers, params=url_params)
     return response.json()
 
-def makeABunch(zips=[84111, 84108, 84117]):
+def getAllZips(zips=[84111, 84108, 84117], num=1000):
     for z in zips:
-        businessesToFile(zip_code=z)
+        businessesToFile(str(z), {'location': z}, num)
 
-def businessesToFile(num=1000, zip_code=84112):
+def getAllLatLong(radius=1610, # in meters, about a mile
+        ll=[
+            [40.763392, -111.896730, 'downtown slc'], 
+            [40.721480, -111.855617, 'sugar house'], 
+            [40.668214, -111.824219, 'holladay'], 
+            [40.646612, -111.497251, 'park city'], 
+        ]):
+    for a in ll:
+        businessesToFile(a[2], {'radius': radius, 'latitude': a[0], 'longitude': a[1]})
+
+def businessesToFile(filename, params, num=1000):
     api_key = getApiKey()
     busses = []
     for offset in range(0, num, MAX_LIMIT):
         limit = min(MAX_LIMIT, num - offset)
-        params = {
-                'location': zip_code,
-                'limit': limit,
-                'offset': offset,
-                }
+        params['limit'] = limit
+        params['offset'] = offset
         if debug:
-            print('Sending request {}'.format(params))
+            print('Requesting {}'.format(params))
         response = request(default_host, default_path, api_key, params)
         b = response['businesses']
         if len(b) > 0:
@@ -42,8 +50,7 @@ def businessesToFile(num=1000, zip_code=84112):
         else:
             break
     print('Got {} businesses'.format(len(busses)))
-    with open(str(zip_code), 'a') as f:
-        #f.write(busses)
+    with open(data_dir + filename, 'a') as f:
         json.dump(busses, f)
     return busses
 
