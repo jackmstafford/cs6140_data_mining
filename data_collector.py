@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import requests
 from urllib import quote
@@ -10,6 +11,10 @@ default_host = 'https://api.yelp.com/'
 default_path = 'v3/businesses/search'
 default_api_key_file = 'api_key'
 data_dir = 'data/'
+
+def mileToMeter(miles):
+    return int(round(miles * 1609.34))
+
 
 def request(host, path, api_key, url_params=None):
     if url_params == None:
@@ -65,20 +70,28 @@ def businessesToFile(filename, params, num=1000):
             busses.extend(b)
         else:
             break
-    with open(data_dir + filename, 'a') as f:
+    with open(data_dir + filename, 'w') as f:
         json.dump(busses, f)
     print('Saved {} businesses to {}'.format(len(busses), filename))
     return busses
+
+def getDataNums():
+    numBus = 0
+    filesize = 0 # in bytes
+    for filename in os.listdir(data_dir):
+        if filename[0] != '8':
+            fn = '{}/{}'.format(data_dir, filename)
+            bs = json.load(open(fn, 'r'))
+            numBus += len(bs)
+            size = os.stat(fn).st_size
+            filesize += size
+    return numBus, filesize
 
 
 def getApiKey(api_key_filename=default_api_key_file):
     with open(api_key_filename) as f:
         api_key = f.read()
     return api_key
-
-def mileToMeter(miles):
-    return int(round(miles * 1609.34))
-
 
 def main(api_key_filename=default_api_key_file, host=default_host, path=default_path):
     params = {
