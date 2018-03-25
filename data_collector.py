@@ -29,7 +29,7 @@ def getAllZips(zips=[84111, 84108, 84117], num=1000):
     for z in zips:
         businessesToFile(str(z), {'location': z}, num)
 
-def getAllLatLong(radius=mileToMeter(1.25), 
+def getAllLatLong(radius=mileToMeter(2), 
         ll=[
             [41.751795, -111.834216, 'logan'],
             [41.221812, -111.973482, 'downtown ogden'],
