@@ -11,10 +11,17 @@ default_host = 'https://api.yelp.com/'
 default_path = 'v3/businesses/search'
 default_api_key_file = 'api_key'
 data_dir = 'data/'
+min_data_fields = ['rating', 'review_count', 'price']
 
 def mileToMeter(miles):
     return int(round(miles * 1609.34))
 
+def readDataFromFile(filename):
+    return json.load(open(filename, 'r'))
+
+def writeDataToFile(filename, data):
+    with open(filename, 'w') as f:
+        json.dump(data, f)
 
 def request(host, path, api_key, url_params=None):
     if url_params == None:
@@ -70,22 +77,54 @@ def businessesToFile(filename, params, num=1000):
             busses.extend(b)
         else:
             break
-    with open(data_dir + filename, 'w') as f:
-        json.dump(busses, f)
+    writeDataToFile(data_dir + filename, busses)
     print('Saved {} businesses to {}'.format(len(busses), filename))
     return busses
 
-def getDataNums():
+def getDataFilenames(dataDirectory=data_dir, getMin=False):
+    filenames = []
+    for filename in os.listdir(data_dir):
+        sp = filename.split('.')
+        if not getMin and len(sp) == 1:
+                filenames.append('{}/{}'.format(data_dir, filename))
+        elif getMin and len(sp) == 2:
+                filenames.append('{}/{}'.format(data_dir, filename))
+    return filenames
+
+def getDataNums(getMin=False):
     numBus = 0
     filesize = 0 # in bytes
-    for filename in os.listdir(data_dir):
-        if filename[0] != '8':
-            fn = '{}/{}'.format(data_dir, filename)
-            bs = json.load(open(fn, 'r'))
-            numBus += len(bs)
-            size = os.stat(fn).st_size
-            filesize += size
+    for filename in getDataFilenames(getMin=getMin):
+        numBus += len(readDataFromFile(filename))
+        filesize += os.stat(filename).st_size
     return numBus, filesize
+
+def minimizeData(dataDirectory=data_dir, minDataFields=min_data_fields, save=False):
+    data = []
+    for filename in getDataFilenames():
+        bizList = readDataFromFile(filename)
+        minBizList = []
+        for biz in bizList:
+            minBiz = {}
+            try:
+                for f in minDataFields:
+                    if f == 'price': 
+                        if f not in biz:
+                            minBiz[f] = 0
+                        else:
+                            minBiz[f] = len(biz[f])
+                    else:
+                        minBiz[f] = biz[f]
+            except KeyError:
+                print('KeyError')
+                for f in biz:
+                    print('\t{:20}{}'.format(f, biz[f]))
+                continue
+            minBizList.append(minBiz)
+        if save:
+            writeDataToFile(filename + '.min', minBizList)
+        data.append(minBizList)
+    return data
 
 
 def getApiKey(api_key_filename=default_api_key_file):
