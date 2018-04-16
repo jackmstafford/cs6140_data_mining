@@ -1,21 +1,21 @@
 import json
-from math import factorial, log, pi, pow, sqrt
+from math import factorial, log, pi, pow, sqrt, ceil, floor
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
 import os
 from random import choice
 from sys import maxint
 
 data_dir = 'data/'
 data_fields = ['rating', 'price', '# reviews']
-colors = ['b', 'r', 'g', 'k']
-markers = ['*', '^', 'D', 'o']
+colors = ['b', 'r', 'k', 'orange']
+markers = ['*', '^', 'D', 'o'] * 4
 for i in range(1, 4):
     colors += colors[i:] + colors[:i]
-    markers += markers[i:] + markers[:i]
 color_and_marker = []
 for c, m in zip(colors, markers):
-    color_and_marker.append(c + m)
+    color_and_marker.append([c, m])
 
 def readDataFromFile(filename):
     return json.load(open(filename, 'r'))
@@ -74,59 +74,114 @@ def makeAllNeighborhoodPoints():
         data = readDataFromFile(filename)
         pt = dataToNeighborhoodPoint(data)
         pts.append(pt)
-        ptToName[json.dumps(pt)] = filename.split('/')[2].split('.')[0]
+        ptToName[pointForMapping(pt)] = filename.split('/')[2].split('.')[0]
     return pts, names, ptToName
 
+def pointForMapping(point):
+    return json.dumps(point)
 
-def plot3(clusters, title, ptToName, do2d=True, isNeighborhood=True):
+def normalize(points):
+    maxs = []
+    for i in range(len(points[0])):
+        maxs.append(float(max(p[i] for p in points)))
+    for i, p in enumerate(points):
+        for j, v in enumerate(p):
+            points[i][j] = v / maxs[j]
+
+def binPoints(points, numBins, index=2, binNames=[], updateMapping=False, mapping=[]):
+    if len(binNames) == 0:
+        binNames = range(numBins)
+    lp = len(points)
+    binSize = int(floor(lp / float(numBins)))
+    rem = lp % numBins
+    lows = [0] * numBins
+    highs = [0] * numBins
+    #print('binSize: {}'.format(binSize))
+    # sortByIndex doesn't deep copy so altering sublists is same list => return not necessary
+    pts = sortByIndex(points, index)
+    i = 0
+    for binNum in range(numBins):
+        lows[binNum] = pts[i][index]
+        size = binSize
+        if binNum + 1 <= rem:
+            size += 1
+        #print('\tbinNum: {}\tsize: {}'.format(binNum, size))
+        for _ in range(size):
+        #binStart = binNum * binSize
+        #for i in range(binStart, min(binStart + binSize, len(pts))):
+            #print('\t\ti: {}'.format(i))
+            highs[binNum] = pts[i][index]
+            if updateMapping:
+                before = pointForMapping(pts[i])
+            pts[i][index] = binNames[binNum]
+            if updateMapping:
+                after = pointForMapping(pts[i])
+                mapping[after] = mapping.pop(before)
+            i += 1
+    labels = []
+    for low, high in zip(lows, highs):
+        labels.append('{:.{a}f} - {:.{a}f}'.format(low, high, a=2))
+    return labels
+    #return pts
+
+def sortByIndex(points, index):
+    return sorted(points, cmp=lambda x,y: cmp(x[index], y[index]))
+
+
+## Plotting
+
+def plot3(clusters, title, ptToName, do2d=True, isNeighborhood=True, axLabels=[]):
+    print(title)
     if isNeighborhood:
         plt3dClstrs, pltClstrs = plotLabelled3dClusters, plotLabelledClusters
     else:
         plt3dClstrs, pltClstrs = plot3dClusters, plotClusters
     df = data_fields
-    plt3dClstrs(clusters, title, ptToName, *df)
+    plt3dClstrs(clusters, title, ptToName, axLabels, *df)
+    #if False:
     if do2d:
         for x in range(3):
             for y in range(x + 1, 3):
-                pltClstrs(clusters, title, df[x], df[y], x, y, ptToName)
+                pltClstrs(clusters, title, df[x], df[y], x, y, ptToName, [axLabels[x], axLabels[y]])
 
-def plotClusters(clusters, title, xLabel, yLabel, ix=0, iy=1, ptLabels={}):
-    xs = []
-    ys = []
+def clustersToPoints(clusters):
+    points = []
+    ptLen = len(clusters[0][0])
+    for _ in range(ptLen):
+        points.append([])
     for clstr in clusters:
-        x = []
-        y = []
+        pts = []
+        for _ in range(ptLen):
+            pts.append([])
         for pt in clstr:
-            x.append(pt[ix])
-            y.append(pt[iy])
-        xs.append(x)
-        ys.append(y)
-    plt.figure(figsize=(5, 5))
+            for i, v in enumerate(pt):
+                pts[i].append(v)
+        for i, v in enumerate(pts):
+            points[i].append(v)
+    return points
+
+def plotClusters(clusters, title, xLabel, yLabel, ix=0, iy=1, ptLabels={}, axLabels=[]):
+    pts = clustersToPoints(clusters)
+    xs = pts[ix]
+    ys = pts[iy]
+    ax = plt.figure(figsize=(6, 5)).add_subplot(111)
+    plt.subplots_adjust(left=.25, top=.94, bottom=.11, right=.98)
     for x, y, m in zip(xs, ys, color_and_marker):
-        plt.plot(x, y, m, mfc='none')
+        #ax.plot(x, y, m, mfc='none')
+        ax.scatter(x, y, facecolors='none', edgecolors=m[0], marker=m[1])
     plt.title(title)
-    plt.xlabel(xLabel)
-    plt.ylabel(yLabel)
-    plt.margins(.01)
+    ax.set_xlabel(xLabel)
+    ax.set_ylabel(yLabel)
+    if len(axLabels) > 0:
+        for labs, fun in zip(axLabels, [ax.set_xticklabels, ax.set_yticklabels]):
+            if len(labs) > 0:
+                fun([0] + labs) # TODO maybe figure out what's going wrong with the labels instead of this hack
     plt.show()
 
-def plot3dClusters(clusters, title, ptLabels, xLabel, yLabel, zLabel):
-    xs = []
-    ys = []
-    zs = []
-    for clstr in clusters:
-        x = []
-        y = []
-        z = []
-        for pt in clstr:
-            x.append(pt[0])
-            y.append(pt[1])
-            z.append(pt[2])
-        xs.append(x)
-        ys.append(y)
-        zs.append(z)
-    ax = plt.figure(figsize=(5, 5)).add_subplot(111, projection='3d')
-    plt.subplots_adjust(left=0, top=.95, bottom=.07, right=.95)
+def plot3dClusters(clusters, title, ptLabels, axLabels, xLabel, yLabel, zLabel):
+    [xs, ys, zs] = clustersToPoints(clusters)
+    ax = plt.figure(figsize=(6, 5)).add_subplot(111, projection='3d')
+    plt.subplots_adjust(left=0, top=.95, bottom=.07, right=.85)
     #ax.view_init(elev=30, azim=-45)
     for x, y, z, m in zip(xs, ys, zs, color_and_marker):
         ax.scatter(x, y, z, c=m[0], marker=m[1])
@@ -134,68 +189,68 @@ def plot3dClusters(clusters, title, ptLabels, xLabel, yLabel, zLabel):
     ax.set_xlabel(xLabel)
     ax.set_ylabel(yLabel)
     ax.set_zlabel(zLabel)
+    if len(axLabels) > 0:
+        for labs, fun, ugh, setlab, axlab in zip(axLabels, 
+                [ax.set_xticklabels, ax.set_yticklabels, ax.set_zticklabels], 
+                ['x', 'y', 'z'],
+                [ax.set_xlabel, ax.set_ylabel, ax.set_zlabel],
+                [xLabel, yLabel, zLabel]
+                ):
+            if len(labs) > 0:
+                ax.tick_params(axis=ugh, pad=22)
+                setlab(axlab, labelpad=38)
+                fun(labs)
     plt.show()
 
-def plotLabelledClusters(clusters, title, xLabel, yLabel, ix=0, iy=1, ptLabels={}):
-    xs = []
-    ys = []
-    zs = []
-    for clstr in clusters:
-        x = []
-        y = []
-        z = []
-        for pt in clstr:
-            x.append(pt[0])
-            y.append(pt[1])
-            z.append(pt[2])
-        xs.append(x)
-        ys.append(y)
-        zs.append(z)
+def plotLabelledClusters(clusters, title, xLabel, yLabel, ix=0, iy=1, ptLabels={}, axLabels=[]):
+    [xs, ys, zs] = clustersToPoints(clusters)
     i = 65
-    plt.figure(figsize=(8, 5))
+    ax = plt.figure(figsize=(9, 5)).add_subplot(111)
+    plt.subplots_adjust(left=.16, top=.95, bottom=.1, right=.73)
     for x, y, z, m in zip(xs, ys, zs, colors):
         for a, b, c in zip(x, y, z):
             pt = [a, b, c]
-            lab = ptLabels[json.dumps(pt)]
+            lab = ptLabels[pointForMapping(pt)]
             px, py = pt[ix], pt[iy]
             plt.scatter(px, py, c=m, marker='${}$'.format(chr(i)), label=lab)
             i += 1
     plt.title(title)
-    plt.xlabel(xLabel)
-    plt.ylabel(yLabel)
-    plt.subplots_adjust(left=.1, top=.95, bottom=.1, right=.7)
+    ax.set_xlabel(xLabel)
+    ax.set_ylabel(yLabel)
+    if len(axLabels) > 0:
+        for labs, fun in zip(axLabels, [ax.set_xticklabels, ax.set_yticklabels]):
+            if len(labs) > 0:
+                fun([0] + labs) # TODO maybe figure out what's going wrong with the labels instead of this hack
     plt.legend(bbox_to_anchor=(1.1, 1))
     plt.show()
 
-def plotLabelled3dClusters(clusters, title, ptLabels, xLabel, yLabel, zLabel):
-    xs = []
-    ys = []
-    zs = []
-    for clstr in clusters:
-        x = []
-        y = []
-        z = []
-        for pt in clstr:
-            x.append(pt[0])
-            y.append(pt[1])
-            z.append(pt[2])
-        xs.append(x)
-        ys.append(y)
-        zs.append(z)
-    ax = plt.figure(figsize=(8, 5)).add_subplot(111, projection='3d')
-    plt.subplots_adjust(left=0, top=.95, bottom=.07, right=.7)
+def plotLabelled3dClusters(clusters, title, ptLabels, axLabels, xLabel, yLabel, zLabel):
+    [xs, ys, zs] = clustersToPoints(clusters)
+    ax = plt.figure(figsize=(8.75, 5)).add_subplot(111, projection='3d')
+    plt.subplots_adjust(left=0, top=.95, bottom=.07, right=.69)
     ax.view_init(elev=30, azim=-45)
     i = 65
     for x, y, z, m in zip(xs, ys, zs, colors):
         for a, b, c in zip(x, y, z):
-            lab = ptLabels[json.dumps([a, b, c])]
+            lab = ptLabels[pointForMapping([a, b, c])]
             ax.scatter(a, b, c, c=m, marker='${}$'.format(chr(i)), label=lab)
             i += 1
     plt.title(title)
     ax.set_xlabel(xLabel)
     ax.set_ylabel(yLabel)
     ax.set_zlabel(zLabel)
-    ax.legend(bbox_to_anchor=(1.1, 1))
+    if len(axLabels) > 0:
+        for labs, fun, ugh, setlab, axlab in zip(axLabels, 
+                [ax.set_xticklabels, ax.set_yticklabels, ax.set_zticklabels], 
+                ['x', 'y', 'z'],
+                [ax.set_xlabel, ax.set_ylabel, ax.set_zlabel],
+                [xLabel, yLabel, zLabel]
+                ):
+            if len(labs) > 0:
+                ax.tick_params(axis=ugh, pad=18)
+                setlab(axlab, labelpad=35)
+                fun(labs)
+    ax.legend(bbox_to_anchor=(1.45, 1))
     plt.show()
 
 def centerToCluster(xToC, points):
@@ -266,14 +321,14 @@ def hierarchicalClustering(points, distFunc, k=4):
 def hc(points, distFunc, k=4):
     return hierarchicalClustering(points, distFunc, k)
 
-def plotHC(clusters, title, ptToName, isNeighborhood=True):
+def plotHC(clusters, title, ptToName, isNeighborhood=True, axLabels=[]):
     # using HC on C1 so assume x and y only
-    plot3(clusters, title, ptToName, do2d=False, isNeighborhood=isNeighborhood)
+    plot3(clusters, title, ptToName, do2d=True, isNeighborhood=isNeighborhood, axLabels=axLabels)
 
-def fullHC(points, distFunc='m', k=4, title='Mean-Link', ptToName={}, isNeighborhood=True):
+def fullHC(points, distFunc='m', k=4, title='Mean-Link', ptToName={}, isNeighborhood=True, axLabels=[]):
     clusters = hierarchicalClustering(points, distFunc, k)
     print('got clusters for ' + title)
-    plotHC(clusters, title, ptToName)
+    plotHC(clusters, title, ptToName, axLabels=axLabels)
 
 def fullBHC(k=3):
     points = makeAllBusinessPoints()
@@ -283,10 +338,13 @@ def fullBHC(k=3):
     print('I don\'t think you actually want to run this on that many points...')
     #fullHC(points, 'm', k, 'Business Mean-Link', isNeighborhood=False)
 
-def fullNHC(k=3):
+def fullNHC(k=3, numBins=8, doBin=True):
     points, names, ptToName = makeAllNeighborhoodPoints()
+    labels = [[], [], []]
+    if doBin:
+        labels[2] = binPoints(points, numBins, 2, updateMapping=True, mapping=ptToName)
     for func, title in zip(['s', 'l', 'm'], ['Single-Link', 'Complete-Link', 'Mean-Link']):
-        fullHC(points, func, k, 'Neighborhood ' + title, ptToName)
+        fullHC(points, func, k, 'Neighborhood ' + title, ptToName, axLabels=labels)
 
 
 ### 2 Assignment-Based Clustering
@@ -326,24 +384,30 @@ def kmeans(points, k=3):
                 cphi[i][j] = ci
     return c, xToC, points
 
-def plotKM(xToC, points, title='k-Means++', ptToName={}, isNeighborhood=True):
+def plotKM(xToC, points, title='k-Means++', ptToName={}, isNeighborhood=True, axLabels=[]):
     clusters = centerToCluster(xToC, points)
-    plot3(clusters, title, ptToName, isNeighborhood=isNeighborhood)
+    plot3(clusters, title, ptToName, isNeighborhood=isNeighborhood, axLabels=axLabels)
 
-def fullKM(points, k=3, title='k-Means++', doReturn=False, ptToName={}, isNeighborhood=True):
+def fullKM(points, k=3, title='k-Means++', doReturn=False, ptToName={}, isNeighborhood=True, axLabels=[]):
     c, xToC, points = kmeans(points, k)
     #print('Centers: {}'.format(c))
-    plotKM(xToC, points, title, ptToName, isNeighborhood)
+    plotKM(xToC, points, title, ptToName, isNeighborhood, axLabels=axLabels)
     if doReturn:
         return c, xToC
 
-def fullBKM(k=3, title='Business k-Means++', doReturn=False):
+def fullBKM(k=3, title='Business k-Means++', doReturn=False, doBin=True, numBins=8):
     points = makeAllBusinessPoints()
-    return fullKM(points, k, title, doReturn, isNeighborhood=False)
+    labels = [[], [], []]
+    if doBin:
+        labels[2] = binPoints(points, numBins, 2)
+    return fullKM(points, k, title, doReturn, isNeighborhood=False, axLabels=labels)
 
-def fullNKM(k=3, title='Neighborhood k-Means++', doReturn=False):
+def fullNKM(k=3, title='Neighborhood k-Means++', doReturn=False, doBin=True, numBins=8):
     points, names, ptToName = makeAllNeighborhoodPoints()
-    return fullKM(points, k, title, doReturn, ptToName)
+    labels = [[], [], []]
+    if doBin:
+        labels[2] = binPoints(points, numBins, 2, updateMapping=True, mapping=ptToName)
+    return fullKM(points, k, title, doReturn, ptToName, axLabels=labels)
 
 
 ## Gonzalez
@@ -379,24 +443,37 @@ def gonzalez(points, k=3):
 def gz(pointsFile, k=3):
     return gonzalez(pointsFile, k)
 
-def plotGZ(xmin, points, title='Gonzalez Greedy Algorithm', ptToName={}, isNeighborhood=True):
+def plotGZ(xmin, points, title='Gonzalez Greedy Algorithm', ptToName={}, isNeighborhood=True, labels=[]):
     clusters = centerToCluster(xmin, points)
-    plot3(clusters, title, ptToName, isNeighborhood=isNeighborhood)
+    #if len(clusters) > 4:
+        #for i, pts in enumerate(clusters):
+            #plot3([pts], '{} - Cluster {}'.format(title, i), ptToName, isNeighborhood=isNeighborhood, axLabels=labels)
+    plot3(clusters, title, ptToName, isNeighborhood=isNeighborhood, axLabels=labels)
 
-def fullGZ(points, k=3, title='Gonzalez Greedy Algorithm', doReturn=False, ptToName={}, isNeighborhood=True):
-    xmin, c, points = gonzalez(pointsFile, k)
+def fullGZ(points, k=3, title='Gonzalez Greedy Algorithm', doReturn=False, ptToName={}, isNeighborhood=True, labels=[]):
+    xmin, c, points = gonzalez(points, k)
     #print('Centers: {}'.format(c))
-    plotGZ(xmin, points, title, ptToName, isNeighborhood)
+    title = '{} (k={})'.format(title, k)
+    plotGZ(xmin, points, title, ptToName, isNeighborhood, labels)
     if doReturn:
         return c, xmin
 
-def fullBGZ(k=3, title='Business Gonzalez Greedy Algorithm', doReturn=False):
+def fullBGZ(k=3, title='Business Gonzalez Greedy Algorithm', doBin=True, numBins=8, doNormalize=False, doReturn=False):
     points = makeAllBusinessPoints()
-    return fullKM(points, k, title, doReturn, isNeighborhood=False)
+    labels = [[], [], []]
+    if doBin:
+        #labels = binPoints(points, numBins, 1)
+        labels[2] = binPoints(points, numBins, 2)
+    if doNormalize:
+        normalize(points)
+    return fullGZ(points, k, title, doReturn, isNeighborhood=False, labels=labels)
 
-def fullNGZ(k=3, title='Neighborhood Gonzalez Greedy Algorithm', doReturn=False):
+def fullNGZ(k=3, title='Neighborhood Gonzalez Greedy Algorithm', doBin=True, numBins=8, binNames=[], doReturn=False):
     points, names, ptToName = makeAllNeighborhoodPoints()
-    return fullKM(points, k, title, doReturn, ptToName)
+    labels = [[], [], []]
+    if doBin:
+        labels[2] = binPoints(points, numBins, 2, updateMapping=True, mapping=ptToName, binNames=binNames)
+    return fullGZ(points, k, title, doReturn, ptToName, labels=labels)
 
 
 ## Lloyd's
@@ -432,11 +509,11 @@ def lloyds(c, points):
         c = newc
     return c, xToC
 
-def plotLL(xToC, points, title='Lloyd\'s Algorithm', ptToName={}):
+def plotLL(xToC, points, title='Lloyd\'s Algorithm', ptToName={}, axLabels=[]):
     clusters = centerToCluster(xToC, points)
-    plot3(clusters, title, ptToName)
+    plot3(clusters, title, ptToName, axLabels=axLabels)
 
-def fullLL(points, cSource='p', k=3, title='Lloyd\'s Algorithm', doReturn=False, ptToName={}):
+def fullLL(points, cSource='g', k=3, title='Lloyd\'s Algorithm', doReturn=False, ptToName={}, axLabels=[]):
     if cSource == 'p':
         cinit = []
         for i in range(3):
@@ -447,10 +524,13 @@ def fullLL(points, cSource='p', k=3, title='Lloyd\'s Algorithm', doReturn=False,
         title += ' initialized with Gonzalez'
     c, xToC = lloyds(cinit, points)
     print('Centers: {}'.format(c))
-    plotLL(xToC, points, title, ptToName)
+    plotLL(xToC, points, title, ptToName, axLabels=axLabels)
     if doReturn:
         return c, xToC 
 
-def fullNLL(cSource='p', k=3, title='Neighborhood Lloyd\'s Algorithm', doReturn=False):
+def fullNLL(cSource='g', k=3, title='Neighborhood Lloyd\'s Algorithm', doReturn=False, doBin=True, numBins=8):
     points, names, ptToName = makeAllNeighborhoodPoints()
-    return fullLL(points, cSource, k, title, doReturn, ptToName)
+    labels = [[], [], []]
+    if doBin:
+        labels[2] = binPoints(points, numBins, 2, updateMapping=True, mapping=ptToName)
+    return fullLL(points, cSource, k, title, doReturn, ptToName, axLabels=labels)
